@@ -1,11 +1,11 @@
 # %%
 import cuqi
 
-#%% Import numpy for "matlab-like" array operations,
-import numpy
+#%% Import PyTorch for "matlab-like" array operations,
+import torch
 
 #%% Set up a vector to be median-filtered
-tx = numpy.array([4, 6, 8, 9, 10, 1, 7.9, 3.1, 4.5, -1.2])
+tx = torch.tensor([4, 6, 8, 9, 10, 1, 7.9, 3.1, 4.5, -1.2])
 print(tx)
 
 #%%
@@ -15,7 +15,7 @@ N = len(tx)
 halfwidth = 2
 
 #%% Initialize output vector y to hold median filtered vector (here use same size as x but can be changed if desired)
-ty = numpy.zeros(tx.shape)
+ty = torch.zeros(tx.shape)
 
 #%%
 # Loop through x, pick out the 2*halfwidth+1 subvectors, compute the median and store as element of y.
@@ -27,7 +27,7 @@ ty = numpy.zeros(tx.shape)
 for i in range(halfwidth, len(tx)-halfwidth):
     subvec = tx[i-halfwidth:i+halfwidth+1]
     print(subvec)
-    ty[i] = numpy.median(subvec)
+    ty[i] = torch.median(subvec)
     print(ty[i])
 
 #%%
@@ -36,11 +36,26 @@ print(ty)
 
 #%%
 # We can define a function to do the same as above to an input vector x:
+# We add some extra checks to handle both NumPy and PyTorch arrays.
 def rollingmedian(xx):
-    yy = numpy.zeros(xx.shape)
+
+    # Check if input is a PyTorch tensor or a NumPy array
+    # If NumPy array, convert to PyTorch tensor
+    not_torch = False
+    if not isinstance(xx, torch.Tensor):
+        xx = torch.tensor(xx)
+        not_torch = True
+
+    # Actual computation
+    yy = torch.zeros(xx.shape)
     for i in range(halfwidth, len(xx)-halfwidth):
         subvec = xx[i-halfwidth:i+halfwidth+1]
-        yy[i] = numpy.median(subvec)
+        yy[i] = torch.median(subvec)
+
+    # If input was a NumPy array, convert output to NumPy array
+    if not_torch:
+        return yy.detach().numpy()
+
     return yy
 
 #%%
@@ -72,7 +87,7 @@ y_true.plot()
 
 # %% Define prior
 sig_x = 0.1
-x = cuqi.distribution.GaussianCov(numpy.zeros(N), sig_x**2)
+x = cuqi.distribution.GaussianCov(torch.zeros(N), sig_x**2)
 
 # %%  Data distribution
 sig_y = 0.01
@@ -114,4 +129,36 @@ samples2.plot_mean()
 samples2.plot()
 # %%
 samples2.plot_std()
+# %% PyTorch version using the same model
+import cuqipy_pytorch
+
+# %% Define Bayesian model
+
+A_torch = lambda x: rollingmedian(x) # TODO: Add to a model class
+
+x = cuqipy_pytorch.distribution.Gaussian(torch.zeros(N), sig_x**2)
+y = cuqipy_pytorch.distribution.Gaussian(A_torch, sig_y**2)
+
+joint = cuqipy_pytorch.distribution.StackedJointDistribution(y, x)
+
+posterior = joint(y=y_noisy)
+
+# %% Sample with NUTS (Takes a good while 30-40 min)
+# Perhaps the choice of prior is not good for this problem
+# Should consider a stronger prior (more correlation or another parameterization)
+samples = cuqipy_pytorch.sampler.NUTS(posterior).sample(1000, 500)
+
+# %%
+# CI looks OK
+samples["x"].plot_ci(exact=x_true)
+# %%
+# Trace plots show that the sampler is moving around between modes it seems
+# Probably its a very multimodal problem
+samples["x"].plot_trace()
+# %% 
+# Essential sample sizes (a few parameters have very low ESS)
+# Mean ESS was 368 for me
+# Median ESS was 252 for me
+samples["x"].compute_ess()
+
 # %%
