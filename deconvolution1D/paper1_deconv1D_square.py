@@ -23,7 +23,7 @@ def mysavefig(filename):
                 bbox_inches='tight', 
                 dpi=300)
 
-s = 0.01
+s = 0.005
 
 #%% First do the sinc case just to get same ylims
 np.random.seed(4)
@@ -71,6 +71,12 @@ xx = A.T(yx)
 
 # %%
 print(x_true.geometry)
+
+# %%
+x = cuqi.distribution.Gaussian(np.zeros(A.domain_dim), 
+                           0.1)
+
+TP.prior = x
 
 # %%
 samples = TP.UQ()
